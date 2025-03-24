@@ -6,14 +6,12 @@ const PLAYER_NAME = 'jakobno@uia.no';
 const BASE_URL = 'https://alchemy-kd0l.onrender.com'; 
 
 const elementMappings = {
-    mercury: { symbol: '☿', modern: 'Hg' },
     gold: { symbol: '☉', modern: 'Au' },
-    lead: { symbol: '♄', modern: 'Pb' },
+    mercury: { symbol: '☿', modern: 'Hg' },
+    silver: { symbol: '☽', modern: 'Ag' },
     iron: { symbol: '♂', modern: 'Fe' },
     copper: { symbol: '♀', modern: 'Cu' },
-    silver: { symbol: '☽', modern: 'Ag' },  
-    tin: { symbol: '♃', modern: 'Sn' },     
-    antimony: { symbol: '🜘', modern: 'Sb' } 
+    lead: { symbol: '♄', modern: 'Pb' }
 };
 
 const symbolToElement = Object.entries(elementMappings).reduce((acc, [element, data]) => {
@@ -23,7 +21,6 @@ const symbolToElement = Object.entries(elementMappings).reduce((acc, [element, d
 
 async function startChallenge() {
     const response = await fetch(`${BASE_URL}/start?player=${encodeURIComponent(PLAYER_NAME)}`);
-    if (!response.ok) throw new Error(`Start failed: ${response.status}`);
     return response.json();
 }
 
@@ -33,55 +30,29 @@ async function submitAnswer(answer) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ player: PLAYER_NAME, answer: answer }),
     });
-    if (!response.ok) throw new Error(`Answer failed: ${response.status}`);
     return response.json();
-}
-
-async function getClue() {
-    const response = await fetch(`${BASE_URL}/clue?player=${encodeURIComponent(PLAYER_NAME)}`);
-    const html = await response.text();
-    return load(html).text();
 }
 
 function decodeFormula(formula) {
     return formula.split('')
-        .map(symbol => symbolToElement[symbol] || '?')
+        .map(symbol => elementMappings[symbolToElement[symbol]]?.modern)
+        .filter(Boolean) 
         .join('');
 }
 
 async function solveChallenge(challenge) {
     
-    const challengeText = challenge.challenge || challenge.question || challenge.data?.challenge;
+    if (challenge.key) return challenge.key;
     
-    if (!challengeText) {
-        console.error('Invalid challenge format:', challenge);
-        throw new Error('Malformed challenge received');
-    }
-
+    const challengeText = challenge.challenge || challenge.question;
     
-    const formulaMatch = challengeText.match(/[☿☉♄♂♀☽♃🜘]+/);
+    
+    const formulaMatch = challengeText.match(/[☉☿☽♂♀♄]+/);
     if (formulaMatch) {
-        const formula = formulaMatch[0];
-        console.log('Decoding formula:', formula);
-        const decoded = decodeFormula(formula);
-        console.log('Decoded elements:', decoded);
-        
-       
-        return decoded.split('').map(element => 
-            elementMappings[element]?.modern || element
-        ).join('');
+        return decodeFormula(formulaMatch[0]);
     }
-
     
-    const question = challengeText.toLowerCase();
-    
-    if (question.includes('ancient name')) {
-        
-    } else if (question.includes('modern name')) {
-        
-    }
-
-    throw new Error('Unhandled challenge type');
+    throw new Error('Unrecognized challenge format');
 }
 
 async function main() {
@@ -90,19 +61,32 @@ async function main() {
         
         while (true) {
             console.log('\n=== Current Challenge ===\n', current.challenge || current.question);
+
             
+            if (current.key) {
+                console.log('\n🔑 Final Key Found:', current.key);
+                fs.writeFileSync('skeletonKey.txt', current.key);
+                break;
+            }
+
             const answer = await solveChallenge(current);
             console.log('\n=== Submitting Answer ===\n', answer);
-            
+
             const result = await submitAnswer(answer);
             
             if (result.key) {
-                console.log('\n🎉 FINAL KEY:', result.key);
+                console.log('\n🎉 Final Key:', result.key);
                 fs.writeFileSync('skeletonKey.txt', result.key);
                 break;
             }
             
-            current = result.nextChallenge || result.challenge;
+            current = result.nextChallenge || result.challenge || result;
+            
+            
+            if (!current || typeof current !== 'object') {
+                console.error('Unexpected final response:', current);
+                break;
+            }
         }
     } catch (error) {
         console.error('Fatal error:', error);
